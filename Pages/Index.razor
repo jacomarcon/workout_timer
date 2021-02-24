@@ -1,0 +1,148 @@
+﻿@page "/"
+@using System.Timers
+@inject IJSRuntime JS
+
+<h1>Workout Timer</h1>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-6">
+            <h3>Timers</h3>
+            <input type="text" @bind-value="new_timer_seconds" />
+            <input type="text" @bind-value="new_timer_name" />
+            <select @bind="new_sound_clip">
+                @foreach (var option in sounds.GetNames(typeof(sounds)))
+                {
+                    <option value="@option">@option.ToString()</option>
+                }
+            </select>
+            <button class="btn btn-primary" @onclick="add_timer">Add Timer</button>
+        </div>
+        <div class="col-6">
+            <h3>Current Timer</h3>
+            @foreach (var timer in timer_entries.OrderBy(x => x.ordinal).ToList())
+            {
+                <div class="row">
+                    <div class="col">
+                        @timer.seconds
+                    </div>
+                    <div class="col">
+                        @timer.name
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <h1>TIMER</h1>
+            <button class="btn btn-primary" @onclick="start_timer">Start Timer</button>
+        </div>
+    </div>
+    <div class="row">
+        <div class="col">
+            <label>Current Timer Left</label>
+            <h1 style="font-size:72px;">@timer_name</h1>
+            <h1>@time_left</h1>
+        </div>
+    </div>
+    <audio id="sound" src="/media/switch.wav" />
+    <audio id="start" src="/media/start.wav" />
+    <audio id="pump" src="/media/pump.wav" />
+    <audio id="readytopump" src="/media/readtopump.wav" />
+    <audio id="takeabreak" src="/media/takeabreak.wav" />
+
+</div>
+
+
+@code {
+    public List<timer_entry> timer_entries = new List<timer_entry>();
+    public int new_timer_seconds { get; set; }
+    public string new_timer_name { get; set; }
+    public sounds new_sound_clip { get; set; }
+    public int elapsed_time { get; set; } = 0;
+    public int time_left { get; set; }
+    public int current_timer_ordinal { get; set; }
+    public string timer_name { get; set; }
+
+    public async Task add_timer()
+    {
+        var last_entry = timer_entries.OrderByDescending(x => x.ordinal).FirstOrDefault();
+
+        timer_entries.Add(new timer_entry()
+        {
+            seconds = new_timer_seconds,
+            name = new_timer_name,
+            sound_clip = new_sound_clip,
+            ordinal = last_entry == null ? 1 : last_entry.ordinal + 1
+        });
+    }
+
+    public List<Timer> timers = new List<Timer>();
+
+    public async Task start_timer()
+    {
+        current_timer_ordinal = 1;
+        var first_timer = timer_entries.First();
+        time_left = first_timer.seconds;
+        timer_name = first_timer.name;
+
+        JS.InvokeAsync<string>("PlaySound", first_timer.sound_clip.ToString());
+
+        var myTimer = new Timer();
+        myTimer.Elapsed += new ElapsedEventHandler(display_time_event);
+        myTimer.Interval = 1000;
+        myTimer.AutoReset = true;
+        myTimer.Start();
+    }
+
+    public void display_time_event(object source, ElapsedEventArgs e)
+    {
+        Console.WriteLine("Timer event");
+        // Show the Current Timer value
+        var current_timer = timer_entries.Where(x => x.ordinal == current_timer_ordinal).First();
+        if (time_left == 0)
+        {
+            // Ran out of time, go to next timer
+            if (current_timer.ordinal == timer_entries.OrderByDescending(x => x.ordinal).Select(x => x.ordinal).First())
+            {
+                // just finished final timer, so restart
+                var first_timer = timer_entries.First();
+                current_timer_ordinal = first_timer.ordinal;
+                time_left = first_timer.seconds;
+                timer_name = first_timer.name;
+
+                JS.InvokeAsync<string>("PlaySound", first_timer.sound_clip.ToString());
+            }
+            else
+            {
+                var next_timer = timer_entries.Where(x => x.ordinal == current_timer_ordinal + 1).First();
+                current_timer_ordinal = next_timer.ordinal;
+                time_left = next_timer.seconds;
+                timer_name = next_timer.name;
+                JS.InvokeAsync<string>("PlaySound", next_timer.sound_clip.ToString());
+            }
+        }
+        else
+        {
+            time_left = time_left - 1;
+        }
+
+        StateHasChanged();
+    }
+
+    public class timer_entry
+    {
+        public int seconds { get; set; }
+        public int ordinal { get; set; }
+        public string name { get; set; }
+        public sounds sound_clip { get; set; }
+    }
+
+    public enum sounds
+    {
+        pump = 0,
+        readytopump = 1,
+        takeabreak = 2
+    }
+}
