@@ -1,87 +1,190 @@
 ﻿@page "/"
+@using System.ComponentModel
 @using System.Timers
+@using Toolbelt.Blazor.SpeechRecognition
 @inject IJSRuntime JS
+@inject SpeechRecognition speech
+@implements IDisposable
 
-<h1>Workout Timer</h1>
 
 <div class="container-fluid">
     <div class="row">
-        <div class="col-6">
-            <h3>Timers</h3>
-            <input type="text" @bind-value="new_timer_seconds" />
-            <input type="text" @bind-value="new_timer_name" />
-            <select @bind="new_sound_clip">
-                @foreach (var option in sounds.GetNames(typeof(sounds)))
-                {
-                    <option value="@option">@option.ToString()</option>
-                }
-            </select>
-            <button class="btn btn-primary" @onclick="add_timer">Add Timer</button>
+        <div class="col-sm-12 text-center">
+            <h1>Workout Timer</h1>
         </div>
-        <div class="col-6">
-            <h3>Current Timer</h3>
-            @foreach (var timer in timer_entries.OrderBy(x => x.ordinal).ToList())
-            {
+    </div>
+    @if (!timer_running)
+    {
+        <div class="row">
+            <div class="col-8 offset-2 text-center">
                 <div class="row">
-                    <div class="col">
-                        @timer.seconds
+                    <div class="col-10">
+                        Add timer
                     </div>
-                    <div class="col">
-                        @timer.name
+                    <div class="col-2">
+
+                        <button class="btn btn-primary" @onclick="@(() => show_add_new_timer = true)" type="button"><i class="fa fa-plus"></i></button>
                     </div>
                 </div>
-            }
+                @if (show_add_new_timer || !timer_entries.Any())
+                {
+                    <div class="row">
+                        <div class="col-3">
+                            <label>Seconds</label>
+                            <input type="text" @bind-value="new_timer_seconds" />
+                        </div>
+                        <div class="col-3">
+                            <label>Name</label>
+                            <input type="text" @bind-value="new_timer_name" />
+                        </div>
+                        <div class="col-3">
+                            <label>Sound</label>
+                            <select @bind="new_sound_clip">
+                                @foreach (var option in sounds.GetNames(typeof(sounds)))
+                                {
+                                    <option value="@option">@option.ToString()</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-3">
+                            <button class="btn btn-primary" @onclick="add_timer">Save</button>
+                        </div>
+                    </div>
+                }
+
+                @foreach (var timer in timer_entries.OrderBy(x => x.ordinal).ToList())
+                {
+                    <div class="row">
+                        <div class="col-2 offset-3">
+                            @timer.seconds
+                        </div>
+                        <div class="col-2">
+                            @timer.name
+                        </div>
+                        <div class="col-2">
+                            <button type="button" class="btn btn-danger" @onclick="@(() => remove_timer(timer.ordinal))"><i class="fa fa-trash"></i></button>
+                        </div>
+                    </div>
+                }
+                <div class="row">
+                    <div class="col text-center">
+                        <button class="btn btn-primary" @onclick="start_timer">Start Timer</button>
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-    <div class="row">
-        <div class="col">
-            <h1>TIMER</h1>
-            <button class="btn btn-primary" @onclick="start_timer">Start Timer</button>
+    }
+
+    @if (timer_running)
+    {
+        <div class="row">
+            <div class="col-1 offset-11">
+                <button class="btn btn-primary" type="button" @onclick="@stop_timer">Stop</button>
+            </div>
         </div>
-    </div>
-    <div class="row">
-        <div class="col">
-            <label>Current Timer Left</label>
-            <h1 style="font-size:72px;">@timer_name</h1>
-            <h1>@time_left</h1>
+        <div class="row">
+            <div class="col text-center">
+                <h1 style="font-size:20vh;">@timer_name</h1>
+                <h1 style="font-size:40vh;">@time_left</h1>
+            </div>
         </div>
-    </div>
+    }
+
     <audio id="sound" src="/media/switch.wav" />
     <audio id="start" src="/media/start.wav" />
     <audio id="pump" src="/media/pump.wav" />
-    <audio id="readytopump" src="/media/readtopump.wav" />
+    <audio id="readytopump" src="/media/readytopump.wav" />
     <audio id="takeabreak" src="/media/takeabreak.wav" />
 
+    @if (show_warning_element)
+    {
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            @warning_message
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close" @onclick="@(() => show_warning_element = false)">
+                <span aria-hidden="true">&times;</span>
+            </button>
+        </div>
+    }
 </div>
 
 
 @code {
     public List<timer_entry> timer_entries = new List<timer_entry>();
-    public int new_timer_seconds { get; set; }
+    public int? new_timer_seconds { get; set; }
     public string new_timer_name { get; set; }
     public sounds new_sound_clip { get; set; }
     public int elapsed_time { get; set; } = 0;
     public int time_left { get; set; }
     public int current_timer_ordinal { get; set; }
     public string timer_name { get; set; }
+    public bool show_warning_element { get; set; }
+    public bool show_add_new_timer { get; set; }
+    public string warning_message { get; set; }
+    public bool timer_running { get; set; }
+    public Timer myTimer = new Timer();
+
+    protected async Task OnInitialized()
+    {
+        await InitializeSpeechRecognition();
+        speech.Result += on_speech_recognized;
+    }
+
+    protected void on_speech_recognized(object sender, SpeechRecognitionEventArgs args)
+    {
+
+    }
+
+    public async Task remove_timer(int ordinal)
+    {
+        var timer = timer_entries.Where(x => x.ordinal == ordinal).First();
+        timer_entries.Remove(timer);
+    }
+
+    public async Task show_warning(string message)
+    {
+        warning_message = message;
+    }
+
+    public async Task stop_timer()
+    {
+        myTimer.Stop();
+        timer_running = false;
+        await speech.StopAsync();
+    }
 
     public async Task add_timer()
     {
+        if (new_timer_seconds == null)
+        {
+            await show_warning("You must add seconds to the timer");
+        }
+
         var last_entry = timer_entries.OrderByDescending(x => x.ordinal).FirstOrDefault();
 
         timer_entries.Add(new timer_entry()
         {
-            seconds = new_timer_seconds,
+            seconds = new_timer_seconds.Value,
             name = new_timer_name,
             sound_clip = new_sound_clip,
             ordinal = last_entry == null ? 1 : last_entry.ordinal + 1
         });
+
+        show_add_new_timer = false;
+        new_timer_name = "";
+        new_timer_seconds = null;
     }
 
     public List<Timer> timers = new List<Timer>();
 
     public async Task start_timer()
     {
+        if (!timer_entries.Any())
+        {
+            await show_warning("You must add a timer first");
+            return;
+        }
+        timer_running = true;
+
         current_timer_ordinal = 1;
         var first_timer = timer_entries.First();
         time_left = first_timer.seconds;
@@ -89,11 +192,21 @@
 
         JS.InvokeAsync<string>("PlaySound", first_timer.sound_clip.ToString());
 
-        var myTimer = new Timer();
         myTimer.Elapsed += new ElapsedEventHandler(display_time_event);
         myTimer.Interval = 1000;
         myTimer.AutoReset = true;
         myTimer.Start();
+
+        await speech.StartAsync();
+    }
+
+    public virtual async Task InitializeSpeechRecognition()
+    {
+        this.speech.Lang = "en-US";
+        this.speech.InterimResults = true;
+        this.speech.Continuous = false;
+
+        await Task.CompletedTask;
     }
 
     public void display_time_event(object source, ElapsedEventArgs e)
@@ -131,6 +244,11 @@
         StateHasChanged();
     }
 
+    public void Dispose()
+    {
+        speech.Result -= on_speech_recognized;
+    }
+
     public class timer_entry
     {
         public int seconds { get; set; }
@@ -141,8 +259,12 @@
 
     public enum sounds
     {
+        [Description("Pump")]
         pump = 0,
+        [Description("Ready To Pump")]
         readytopump = 1,
+        [Description("Take a Break")]
         takeabreak = 2
+
     }
 }

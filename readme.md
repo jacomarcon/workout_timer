@@ -1,5 +1,2 @@
-# Workout Timer
-
-This workout timer is built to allow you to set variable length timer segments with a title and a selected audio clip. 
-
-## License: MIT
+# workout_timer
+workout timer for keeping sets in time built with blazor wasm
